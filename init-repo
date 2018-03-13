@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+
+if [[ $# -ne 2 ]] ; then
+    echo "Please provide the seed repository and name for the new service."
+    echo 'Usage: ./init-repo git@bitbucket.org:bringmeister/con-starter.git my-new-service'
+    exit 1
+fi
+
+export SEED_REPO=$1
+export NEW_SERVICE=${2//[^a-zA-Z-]/}
+
+export BASE_PATH=de/bringmeister/connect
+export BASE_PACKAGE=${BASE_PATH//\//.}
+export SEED_SERVICE=starter
+export NEW_SERVICE_PACKAGE=${BASE_PACKAGE}.${NEW_SERVICE//[^a-zA-Z]/}
+
+echo "SEED_REPO: ${SEED_REPO}"
+echo "BASE_PATH: ${BASE_PATH}"
+echo "BASE_PACKAGE: ${BASE_PACKAGE}"
+echo "NEW_SERVICE: ${NEW_SERVICE}"
+echo "NEW_SERVICE_PACKAGE: ${NEW_SERVICE_PACKAGE}"
+
+export GIT_BRANCH=start-from-seed
+
+echo "Fetching seed project from ${SEED_REPO}..."
+git remote add seed ${SEED_REPO}
+git fetch seed
+git co -b ${GIT_BRANCH}
+git merge --allow-unrelated-histories -m "Init from seed" seed/master
+
+declare -a files_to_modify=(
+"settings.gradle"
+"bitbucket-pipelines.yml"
+"tools/aws/container-definition-dev.json"
+"tools/aws/container-definition-staging.json"
+"tools/aws/container-definition-production.json"
+"src/main/resources/application.yml"
+"docker-compose.yml"
+"docs/api/api.yaml")
+
+for file in "${files_to_modify[@]}"
+do
+    echo "Modifying file ${file}..."
+   find ${file} -type f -exec sed -i "" "s/${SEED_SERVICE}/${NEW_SERVICE}/g" {} \;
+done
+
+declare -a folders_to_modify=(
+"src/main/kotlin"
+"src/test/kotlin"
+"src/integrationTest/kotlin")
+
+for folder in "${folders_to_modify[@]}"
+do
+    echo "Renaming folders in ${folder}..."
+    mv ${folder}/${BASE_PATH}/${SEED_SERVICE} ${folder}/${BASE_PATH}/${NEW_SERVICE//[^a-zA-Z]/}
+done
+
+find src -type f -exec sed -i "" "s/${BASE_PACKAGE}.${SEED_SERVICE}/${NEW_SERVICE_PACKAGE}/g" {} \;
+
+echo "# ${NEW_SERVICE}" > README.md
+echo "Seed project ${SEED_REPO}" >> README.md
+echo "" >> README.md
+echo "Run: \`\`\`docker-compose up -d kinesis dynamodb && ./gradlew clean bootRun\`\`\`" >> README.md
+echo "" >> README.md
+echo "or" >> README.md
+echo "" >> README.md
+echo "Run: \`\`\`./gradlew clean build && docker-compose up --build -d\`\`\`" >> README.md
+
+declare -a files_to_ignore=(
+"docs/images")
+
+for file_to_ignore in "${files_to_ignore[@]}"
+do
+    rm -rf ${file_to_ignore}
+done
+
+echo "Pushing project to repository..."
+git add .
+git commit -m "Start from Starter"
+
+git push --set-upstream origin ${GIT_BRANCH}
+git remote remove seed
+echo "Done."
